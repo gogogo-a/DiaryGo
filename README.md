@@ -1,6 +1,6 @@
 # DiaryGo
 
-DiaryGo是一个基于Go语言和Gin框架开发的日记应用后端服务。
+DiaryGo是一个基于Go语言和Gin框架开发的日记应用后端服务，使用MySQL数据库和GORM作为ORM框架。
 
 ## 项目结构
 
@@ -8,11 +8,11 @@ DiaryGo是一个基于Go语言和Gin框架开发的日记应用后端服务。
 DiaryGo/
   - api/             # API定义和版本控制
     - v1/            # API v1版本
-    - v2/            # API v2版本
+      - diary.go     # 日记资源API处理
+      - routes.go    # v1版本路由注册
+    - v2/            # API v2版本(未来扩展)
   - config/          # 配置文件
   - internal/        # 内部包
-    - handler/       # HTTP处理器
-    - middleware/    # 中间件
     - models/        # 数据模型
     - repository/    # 数据仓库
   - main.go          # 程序入口
@@ -68,14 +68,45 @@ go build -o bin/diary-go
 
 启动服务后，可以通过以下命令测试API是否正常工作:
 
+### 基础健康检查
 ```bash
 curl http://localhost:8080/ping
 ```
 
 预期返回:
-
 ```json
 {"message":"pong"}
+```
+
+### 日记API
+
+#### 获取所有日记
+```bash
+curl http://localhost:8080/api/v1/diaries
+```
+
+#### 获取单个日记
+```bash
+curl http://localhost:8080/api/v1/diaries/1
+```
+
+#### 创建日记
+```bash
+curl -X POST http://localhost:8080/api/v1/diaries \
+  -H "Content-Type: application/json" \
+  -d '{"title":"我的第一篇日记","content":"今天是美好的一天...","mood":"开心","weather":"晴天"}'
+```
+
+#### 更新日记
+```bash
+curl -X PUT http://localhost:8080/api/v1/diaries/1 \
+  -H "Content-Type: application/json" \
+  -d '{"title":"更新后的日记标题","content":"更新后的内容...","mood":"平静","weather":"多云"}'
+```
+
+#### 删除日记
+```bash
+curl -X DELETE http://localhost:8080/api/v1/diaries/1
 ```
 
 ## 配置
