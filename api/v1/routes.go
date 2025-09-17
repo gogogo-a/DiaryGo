@@ -38,5 +38,9 @@ func RegisterRoutes(router *gin.Engine) {
 		// 账单相关路由（需要认证）
 		billHandler := NewBillHandler()
 		billHandler.RegisterRoutes(protected)
+
+		// 标签相关路由（需要认证）
+		tagHandler := NewTagHandler()
+		tagHandler.RegisterRoutes(protected)
 	}
 }

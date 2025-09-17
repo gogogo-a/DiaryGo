@@ -10,11 +10,11 @@ import (
 // Diary 日记模型
 type Diary struct {
 	Id        uuid.UUID `json:"id" gorm:"primaryKey;type:char(36)"`
-	UserId    uuid.UUID `json:"user_id" gorm:"type:char(36);not null;index;constraint:OnUpdate:CASCADE,OnDelete:CASCADE;"`
-	User      User      `json:"user" gorm:"foreignKey:UserId;references:Id"`
 	Title     string    `json:"title" gorm:"size:255;not null"`
 	Content   string    `json:"content" gorm:"type:text;not null"`
 	Address   string    `json:"address" gorm:"size:255"`
+	Pageview  int       `json:"pageview" gorm:"default:0"`
+	Like      int       `json:"like" gorm:"default:0"`
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
 

@@ -59,13 +59,13 @@ func (h *BillHandler) RegisterRoutes(router *gin.RouterGroup) {
 
 // BillRequest 账单请求参数
 type BillRequest struct {
-	AccountBookID uuid.UUID `json:"account_book_id" binding:"required"`
-	Amount        float64   `json:"amount" binding:"required"`
-	Type          string    `json:"type" binding:"required"` // income 收入 / expense 支出
-	TagID         uuid.UUID `json:"tag_id" binding:"required"`
-	BillTime      time.Time `json:"bill_time" binding:"required"`
-	Remark        string    `json:"remark"`
-	ImageUrl      string    `json:"image_url"`
+	AccountBookID uuid.UUID   `json:"account_book_id" binding:"required"`
+	Amount        float64     `json:"amount" binding:"required"`
+	Type          string      `json:"type" binding:"required"` // income 收入 / expense 支出
+	TagIDs        []uuid.UUID `json:"tag_ids" binding:"required,min=1"`
+	BillTime      time.Time   `json:"bill_time" binding:"required"`
+	Remark        string      `json:"remark"`
+	ImageUrl      string      `json:"image_url"`
 }
 
 // BillQuery 账单查询参数
@@ -74,7 +74,7 @@ type BillQuery struct {
 	Page          int       `form:"page" binding:"omitempty,min=1"`
 	PageSize      int       `form:"page_size" binding:"omitempty,min=1,max=100"`
 	Type          string    `form:"type"`
-	TagID         string    `form:"tag_id"`
+	TagIDs        []string  `form:"tag_ids"`
 	StartTime     time.Time `form:"start_time" time_format:"2006-01-02"`
 	EndTime       time.Time `form:"end_time" time_format:"2006-01-02"`
 	MinAmount     float64   `form:"min_amount"`
@@ -90,6 +90,12 @@ type StatsQuery struct {
 	GroupBy       string    `form:"group_by" binding:"omitempty,oneof=day week month year"`
 }
 
+// BillResponse 账单响应结构
+type BillResponse struct {
+	Bill models.Bill  `json:"bill"`
+	Tags []models.Tag `json:"tags"`
+}
+
 // CreateBill 创建账单
 // URL: POST /api/v1/bills
 // 功能: 创建新账单
@@ -100,7 +106,7 @@ type StatsQuery struct {
 //	  "account_book_id": "账本UUID",
 //	  "amount": 100.00,
 //	  "type": "income/expense",
-//	  "tag_id": "标签UUID",
+//	  "tag_ids": ["标签UUID1", "标签UUID2"],
 //	  "bill_time": "2023-01-01T00:00:00Z",
 //	  "remark": "备注",
 //	  "image_url": "图片URL"
@@ -145,11 +151,13 @@ func (h *BillHandler) CreateBill(c *gin.Context) {
 		return
 	}
 
-	// 检查标签是否存在
-	_, err = h.tagRepo.GetByID(req.TagID)
-	if err != nil {
-		response.NotFound(c, "标签不存在")
-		return
+	// 检查所有标签是否存在
+	for _, tagID := range req.TagIDs {
+		_, err = h.tagRepo.GetByID(tagID)
+		if err != nil {
+			response.NotFound(c, "标签不存在: "+tagID.String())
+			return
+		}
 	}
 
 	// 创建账单
@@ -158,17 +166,26 @@ func (h *BillHandler) CreateBill(c *gin.Context) {
 		UserId:        userID.(uuid.UUID),
 		Amount:        req.Amount,
 		Type:          req.Type,
-		TagId:         req.TagID,
 		Remark:        req.Remark,
 		ImageUrl:      req.ImageUrl,
 	}
 
-	if err := h.repo.Create(bill); err != nil {
+	if err := h.repo.Create(bill, req.TagIDs); err != nil {
 		response.ServerError(c, "创建账单失败")
 		return
 	}
 
-	response.SuccessWithMessage(c, "创建账单成功", bill)
+	// 获取完整的账单信息（包括标签）
+	billWithTags, tags, err := h.repo.GetBillWithTags(bill.Id)
+	if err != nil {
+		response.SuccessWithMessage(c, "创建账单成功，但获取详情失败", bill)
+		return
+	}
+
+	response.SuccessWithMessage(c, "创建账单成功", BillResponse{
+		Bill: *billWithTags,
+		Tags: tags,
+	})
 }
 
 // ListBills 获取账单列表
@@ -180,7 +197,7 @@ func (h *BillHandler) CreateBill(c *gin.Context) {
 //   - page: 页码，默认为1
 //   - page_size: 每页数量，默认为10，最大100
 //   - type: 账单类型 (income/expense)
-//   - tag_id: 标签ID
+//   - tag_ids: 标签ID列表
 //   - start_time: 开始时间 (YYYY-MM-DD)
 //   - end_time: 结束时间 (YYYY-MM-DD)
 //   - min_amount: 最小金额
@@ -201,7 +218,7 @@ func (h *BillHandler) CreateBill(c *gin.Context) {
 // @Param page query int false "页码，默认为1"
 // @Param page_size query int false "每页数量，默认为10，最大100"
 // @Param type query string false "账单类型 (income/expense)"
-// @Param tag_id query string false "标签ID"
+// @Param tag_ids query []string false "标签ID列表"
 // @Param start_time query string false "开始时间 (YYYY-MM-DD)"
 // @Param end_time query string false "结束时间 (YYYY-MM-DD)"
 // @Param min_amount query number false "最小金额"
@@ -243,13 +260,14 @@ func (h *BillHandler) ListBills(c *gin.Context) {
 	}
 
 	// 解析标签ID（如果有）
-	var tagID uuid.UUID
-	if query.TagID != "" {
-		tagID, err = uuid.Parse(query.TagID)
+	var tagIDs []uuid.UUID
+	for _, tagIDStr := range query.TagIDs {
+		tagID, err := uuid.Parse(tagIDStr)
 		if err != nil {
-			response.ParamError(c, "无效的标签ID格式")
+			response.ParamError(c, "无效的标签ID格式: "+tagIDStr)
 			return
 		}
+		tagIDs = append(tagIDs, tagID)
 	}
 
 	// 设置默认值
@@ -268,7 +286,7 @@ func (h *BillHandler) ListBills(c *gin.Context) {
 		query.Page,
 		query.PageSize,
 		query.Type,
-		tagID,
+		tagIDs,
 		query.StartTime,
 		query.EndTime,
 		query.MinAmount,
@@ -304,7 +322,7 @@ func (h *BillHandler) ListBills(c *gin.Context) {
 //	  "account_book_id": "账本UUID",
 //	  "amount": 100.00,
 //	  "type": "income/expense",
-//	  "tag_id": "标签UUID",
+//	  "tag_ids": ["标签UUID1", "标签UUID2"],
 //	  "bill_time": "2023-01-01T00:00:00Z",
 //	  "remark": "备注",
 //	  "image_url": "图片URL"
@@ -375,27 +393,38 @@ func (h *BillHandler) UpdateBill(c *gin.Context) {
 		}
 	}
 
-	// 检查标签是否存在
-	_, err = h.tagRepo.GetByID(req.TagID)
-	if err != nil {
-		response.NotFound(c, "标签不存在")
-		return
+	// 检查所有标签是否存在
+	for _, tagID := range req.TagIDs {
+		_, err = h.tagRepo.GetByID(tagID)
+		if err != nil {
+			response.NotFound(c, "标签不存在: "+tagID.String())
+			return
+		}
 	}
 
 	// 更新账单信息
 	originalBill.AccountBookId = req.AccountBookID
 	originalBill.Amount = req.Amount
 	originalBill.Type = req.Type
-	originalBill.TagId = req.TagID
 	originalBill.Remark = req.Remark
 	originalBill.ImageUrl = req.ImageUrl
 
-	if err := h.repo.Update(originalBill); err != nil {
+	if err := h.repo.Update(originalBill, req.TagIDs); err != nil {
 		response.ServerError(c, "更新账单失败")
 		return
 	}
 
-	response.SuccessWithMessage(c, "更新账单成功", originalBill)
+	// 获取完整的账单信息（包括标签）
+	billWithTags, tags, err := h.repo.GetBillWithTags(originalBill.Id)
+	if err != nil {
+		response.SuccessWithMessage(c, "更新账单成功，但获取详情失败", originalBill)
+		return
+	}
+
+	response.SuccessWithMessage(c, "更新账单成功", BillResponse{
+		Bill: *billWithTags,
+		Tags: tags,
+	})
 }
 
 // DeleteBill 删除账单
@@ -516,10 +545,18 @@ func (h *BillHandler) GetBill(c *gin.Context) {
 		return
 	}
 
-	response.Success(c, bill)
-}
+	// 获取账单及其标签
+	billWithTags, tags, err := h.repo.GetBillWithTags(id)
+	if err != nil {
+		response.ServerError(c, "获取账单详情失败")
+		return
+	}
 
-// 使用repository包中的BillStats和BillGroupStats
+	response.Success(c, BillResponse{
+		Bill: *billWithTags,
+		Tags: tags,
+	})
+}
 
 // GetBillStats 获取账单统计
 // URL: GET /api/v1/bills/stats

@@ -29,24 +29,27 @@ type BillGroupStats struct {
 // BillRepository 账单仓库接口
 type BillRepository interface {
 	// Create 创建账单
-	Create(bill *models.Bill) error
+	Create(bill *models.Bill, tagIDs []uuid.UUID) error
 
 	// GetByID 根据ID获取账单
 	GetByID(id uuid.UUID) (*models.Bill, error)
+
+	// GetBillWithTags 获取账单及其标签
+	GetBillWithTags(id uuid.UUID) (*models.Bill, []models.Tag, error)
 
 	// GetBills 获取账单列表，支持分页和多条件搜索
 	GetBills(
 		accountBookID uuid.UUID,
 		page, pageSize int,
 		billType string,
-		tagID uuid.UUID,
+		tagIDs []uuid.UUID,
 		startTime, endTime time.Time,
 		minAmount, maxAmount float64,
 		keyword string,
 	) ([]models.Bill, int64, error)
 
 	// Update 更新账单
-	Update(bill *models.Bill) error
+	Update(bill *models.Bill, tagIDs []uuid.UUID) error
 
 	// Delete 删除账单
 	Delete(id uuid.UUID) error
@@ -68,8 +71,26 @@ func NewBillRepository() BillRepository {
 }
 
 // Create 创建账单
-func (r *billRepository) Create(bill *models.Bill) error {
-	return r.db.Create(bill).Error
+func (r *billRepository) Create(bill *models.Bill, tagIDs []uuid.UUID) error {
+	return r.db.Transaction(func(tx *gorm.DB) error {
+		// 创建账单
+		if err := tx.Create(bill).Error; err != nil {
+			return err
+		}
+
+		// 创建账单与标签的关联
+		for _, tagID := range tagIDs {
+			billTag := models.BillTag{
+				BillId: bill.Id,
+				TagId:  tagID,
+			}
+			if err := tx.Create(&billTag).Error; err != nil {
+				return err
+			}
+		}
+
+		return nil
+	})
 }
 
 // GetByID 根据ID获取账单
@@ -82,12 +103,30 @@ func (r *billRepository) GetByID(id uuid.UUID) (*models.Bill, error) {
 	return &bill, nil
 }
 
+// GetBillWithTags 获取账单及其标签
+func (r *billRepository) GetBillWithTags(id uuid.UUID) (*models.Bill, []models.Tag, error) {
+	var bill models.Bill
+	if err := r.db.Where("id = ?", id).First(&bill).Error; err != nil {
+		return nil, nil, err
+	}
+
+	var tags []models.Tag
+	if err := r.db.Table("tags").
+		Joins("JOIN bill_tags ON tags.id = bill_tags.tag_id").
+		Where("bill_tags.bill_id = ?", id).
+		Find(&tags).Error; err != nil {
+		return nil, nil, err
+	}
+
+	return &bill, tags, nil
+}
+
 // GetBills 获取账单列表，支持分页和多条件搜索
 func (r *billRepository) GetBills(
 	accountBookID uuid.UUID,
 	page, pageSize int,
 	billType string,
-	tagID uuid.UUID,
+	tagIDs []uuid.UUID,
 	startTime, endTime time.Time,
 	minAmount, maxAmount float64,
 	keyword string,
@@ -104,8 +143,15 @@ func (r *billRepository) GetBills(
 	}
 
 	// 标签过滤
-	if tagID != uuid.Nil {
-		query = query.Where("tag_id = ?", tagID)
+	if len(tagIDs) > 0 {
+		// 使用子查询查找包含所有指定标签的账单
+		subQuery := r.db.Table("bill_tags").
+			Select("bill_id").
+			Where("tag_id IN ?", tagIDs).
+			Group("bill_id").
+			Having("COUNT(DISTINCT tag_id) = ?", len(tagIDs))
+
+		query = query.Where("bills.id IN (?)", subQuery)
 	}
 
 	// 时间范围
@@ -144,13 +190,44 @@ func (r *billRepository) GetBills(
 }
 
 // Update 更新账单
-func (r *billRepository) Update(bill *models.Bill) error {
-	return r.db.Save(bill).Error
+func (r *billRepository) Update(bill *models.Bill, tagIDs []uuid.UUID) error {
+	return r.db.Transaction(func(tx *gorm.DB) error {
+		// 更新账单基本信息
+		if err := tx.Save(bill).Error; err != nil {
+			return err
+		}
+
+		// 删除现有的标签关联
+		if err := tx.Where("bill_id = ?", bill.Id).Delete(&models.BillTag{}).Error; err != nil {
+			return err
+		}
+
+		// 创建新的标签关联
+		for _, tagID := range tagIDs {
+			billTag := models.BillTag{
+				BillId: bill.Id,
+				TagId:  tagID,
+			}
+			if err := tx.Create(&billTag).Error; err != nil {
+				return err
+			}
+		}
+
+		return nil
+	})
 }
 
 // Delete 删除账单
 func (r *billRepository) Delete(id uuid.UUID) error {
-	return r.db.Delete(&models.Bill{}, id).Error
+	return r.db.Transaction(func(tx *gorm.DB) error {
+		// 删除账单标签关联
+		if err := tx.Where("bill_id = ?", id).Delete(&models.BillTag{}).Error; err != nil {
+			return err
+		}
+
+		// 删除账单
+		return tx.Delete(&models.Bill{}, id).Error
+	})
 }
 
 // GetStats 获取账单统计
@@ -186,15 +263,17 @@ func (r *billRepository) GetStats(accountBookID uuid.UUID, startTime, endTime ti
 
 	// 按标签统计
 	var tagStats []struct {
-		TagId  uuid.UUID
+		TagID  uuid.UUID
 		Name   string
 		Amount float64
 	}
+
 	if err := r.db.Table("bills").
-		Select("bills.tag_id, tags.name, SUM(bills.amount) as amount").
-		Joins("JOIN tags ON bills.tag_id = tags.id").
+		Select("tags.id as tag_id, tags.tag_name as name, SUM(bills.amount) as amount").
+		Joins("JOIN bill_tags ON bills.id = bill_tags.bill_id").
+		Joins("JOIN tags ON bill_tags.tag_id = tags.id").
 		Where("bills.account_book_id = ?", accountBookID).
-		Group("bills.tag_id, tags.name").
+		Group("tags.id, tags.tag_name").
 		Scan(&tagStats).Error; err != nil {
 		return nil, err
 	}

@@ -7,7 +7,7 @@ import (
 	"github.com/gin-gonic/gin"
 	v1 "github.com/haogeng/DiaryGo/api/v1"
 	"github.com/haogeng/DiaryGo/internal/middleware"
-	"github.com/haogeng/DiaryGo/internal/models"
+	"github.com/haogeng/DiaryGo/migrations"
 	"github.com/haogeng/DiaryGo/pkg/database"
 	"github.com/haogeng/DiaryGo/pkg/logger"
 	"github.com/haogeng/DiaryGo/pkg/response"
@@ -33,8 +33,8 @@ func main() {
 		logger.Error("数据库连接失败: %v", err)
 	}
 
-	// 自动迁移模型 - 先迁移 User 模型，再迁移 Diary 模型（因为有外键关系）
-	if err := db.AutoMigrate(&models.User{}, &models.Diary{}, &models.DiaryImage{}, &models.DiaryVideo{}, &models.DiaryTag{}, &models.DiaryDPermission{}, &models.Tag{}, &models.DPermission{}); err != nil {
+	// 数据库迁移 - 使用migrations包中的MigrateDatabase函数
+	if err := migrations.MigrateDatabase(db); err != nil {
 		log.Fatalf("数据库迁移失败: %v", err)
 		logger.Error("数据库迁移失败: %v", err)
 	}

@@ -17,12 +17,11 @@ type User struct {
 	Email     string    `json:"email"`
 	Phone     string    `json:"phone"`
 	Gender    string    `json:"gender"`
-	Birthday  time.Time `json:"birthday"`
+	Birthday  *time.Time `json:"birthday"`
 	Address   string    `json:"address"`
 	Remark    string    `json:"remark"`
 	CreatedAt time.Time `json:"created_at" gorm:"autoCreateTime"`
 	UpdatedAt time.Time `json:"updated_at" gorm:"autoUpdateTime"`
-	Diaries   []Diary   `json:"diaries" gorm:"foreignKey:UserId;references:Id"`
 }
 
 func (User) TableName() string {
@@ -34,6 +33,7 @@ func (u *User) BeforeCreate(tx *gorm.DB) error {
 	u.UserName = "用户" + u.Id.String()
 	u.CreatedAt = time.Now()
 	u.UpdatedAt = time.Now()
+	u.Birthday=nil
 	return nil
 }
 

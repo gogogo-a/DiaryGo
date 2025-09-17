@@ -9,7 +9,7 @@ import (
 
 type DPermission struct {
 	Id        uuid.UUID `json:"id" gorm:"primaryKey;type:char(36)"`
-	PermissionName string `json:"permission_name" gorm:"type:varchar(255);not null"`
+	PermissionName string `json:"permission_name" gorm:"type:varchar(255);not null"`//`公开，共享，仅自己可见`
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
 }
