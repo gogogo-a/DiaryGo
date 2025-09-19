@@ -29,6 +29,7 @@ func Auth() gin.HandlerFunc {
 		}
 
 		// 解析令牌
+		fmt.Println("parts[1]", parts[1])
 		claims, err := jwt.ParseToken(parts[1])
 		if err != nil {
 			fmt.Println("无效的认证令牌", err, parts[1])

@@ -39,8 +39,14 @@ type DiaryRepository interface {
 	// CheckUserLike 检查用户是否点赞
 	CheckUserLike(diaryId uuid.UUID, userId uuid.UUID) (bool, error)
 
-	// ShareDiary 分享日记给其他用户
-	ShareDiary(diaryId uuid.UUID, shareUserId uuid.UUID, currentUserId uuid.UUID) error
+	// // ShareDiary 分享日记给其他用户 (原始方法，现在被拆分为下面两个方法)
+	// ShareDiary(diaryId uuid.UUID, shareUserId uuid.UUID, currentUserId uuid.UUID) error
+
+	// ShareDiaryToUser 分享日记给其他用户并设置权限
+	ShareDiaryToUser(diaryId uuid.UUID, shareUserId uuid.UUID, permissionId uuid.UUID, currentUserId uuid.UUID) error
+
+	// UpdateDiaryPermission 更新日记权限
+	UpdateDiaryPermission(diaryId uuid.UUID, permissionId uuid.UUID, currentUserId uuid.UUID) error
 }
 
 // diaryRepository 日记仓库实现
@@ -158,7 +164,7 @@ func (r *diaryRepository) GetDiaryWithDetails(diaryId uuid.UUID, userId uuid.UUI
 
 	// 获取权限
 	var permission models.DPermission
-	if err := r.db.Joins("JOIN diary_dpermissions ON dpermissions.id = diary_dpermissions.dpermission_id").
+	if err := r.db.Joins("JOIN diary_dpermissions ON dpermissions.id = diary_dpermissions.d_permission_id").
 		Where("diary_dpermissions.diary_id = ?", diaryId).First(&permission).Error; err != nil {
 		return nil, nil, nil, nil, nil, err
 	}
@@ -333,9 +339,12 @@ func (r *diaryRepository) UpdateDiary(diaryId uuid.UUID, userId uuid.UUID, updat
 // DeleteDiary 删除日记（只有创建者可以删除）
 func (r *diaryRepository) DeleteDiary(diaryId uuid.UUID, userId uuid.UUID) error {
 	return r.db.Transaction(func(tx *gorm.DB) error {
-		// 检查是否是创建者（查找最早创建的diary_user记录）
+		// 获取日记的第一个用户（创建者）
 		var firstDiaryUser models.DiaryUser
 		if err := tx.Where("diary_id = ?", diaryId).Order("created_at asc").First(&firstDiaryUser).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return errors.New("日记不存在或已删除")
+			}
 			return err
 		}
 
@@ -344,7 +353,38 @@ func (r *diaryRepository) DeleteDiary(diaryId uuid.UUID, userId uuid.UUID) error
 			return errors.New("只有创建者可以删除日记")
 		}
 
-		// 删除日记（关联表的记录会通过外键级联删除）
+		// 先删除所有关联记录
+		// 1. 删除日记权限关联
+		if err := tx.Where("diary_id = ?", diaryId).Delete(&models.DiaryDPermission{}).Error; err != nil {
+			return err
+		}
+
+		// 2. 删除日记标签关联
+		if err := tx.Where("diary_id = ?", diaryId).Delete(&models.DiaryTag{}).Error; err != nil {
+			return err
+		}
+
+		// 3. 删除日记图片关联
+		if err := tx.Where("diary_id = ?", diaryId).Delete(&models.DiaryImage{}).Error; err != nil {
+			return err
+		}
+
+		// 4. 删除日记视频关联
+		if err := tx.Where("diary_id = ?", diaryId).Delete(&models.DiaryVideo{}).Error; err != nil {
+			return err
+		}
+
+		// 5. 删除日记点赞关联
+		if err := tx.Where("diary_id = ?", diaryId).Delete(&models.DiaryLike{}).Error; err != nil {
+			return err
+		}
+
+		// 6. 删除日记用户关联
+		if err := tx.Where("diary_id = ?", diaryId).Delete(&models.DiaryUser{}).Error; err != nil {
+			return err
+		}
+
+		// 最后删除日记本身
 		if err := tx.Delete(&models.Diary{}, "id = ?", diaryId).Error; err != nil {
 			return err
 		}
@@ -398,9 +438,9 @@ func (r *diaryRepository) AddLike(diaryId uuid.UUID, userId uuid.UUID) error {
 			return err
 		}
 
-		// 增加日记点赞数
+		// 增加日记点赞数 - 修复MySQL关键字冲突，使用反引号
 		if err := tx.Model(&models.Diary{}).Where("id = ?", diaryId).
-			UpdateColumn("like", gorm.Expr("like + ?", 1)).Error; err != nil {
+			UpdateColumn("`like`", gorm.Expr("`like` + ?", 1)).Error; err != nil {
 			return err
 		}
 
@@ -433,9 +473,9 @@ func (r *diaryRepository) RemoveLike(diaryId uuid.UUID, userId uuid.UUID) error 
 			return errors.New("您尚未点赞该日记")
 		}
 
-		// 减少日记点赞数，但确保不会小于0
+		// 减少日记点赞数，但确保不会小于0 - 修复MySQL关键字冲突，使用反引号
 		if err := tx.Model(&models.Diary{}).Where("id = ? AND `like` > 0", diaryId).
-			UpdateColumn("like", gorm.Expr("like - ?", 1)).Error; err != nil {
+			UpdateColumn("`like`", gorm.Expr("`like` - ?", 1)).Error; err != nil {
 			return err
 		}
 
@@ -443,27 +483,97 @@ func (r *diaryRepository) RemoveLike(diaryId uuid.UUID, userId uuid.UUID) error 
 	})
 }
 
-// ShareDiary 分享日记给其他用户
-func (r *diaryRepository) ShareDiary(diaryId uuid.UUID, shareUserId uuid.UUID, currentUserId uuid.UUID) error {
-	// 检查当前用户是否有权限分享
+// // ShareDiary 分享日记给其他用户
+// func (r *diaryRepository) ShareDiary(diaryId uuid.UUID, shareUserId uuid.UUID, currentUserId uuid.UUID) error {
+// 	// 检查当前用户是否有权限分享
+// 	var diaryUser models.DiaryUser
+// 	if err := r.db.First(&diaryUser, "diary_id = ? AND user_id = ?", diaryId, currentUserId).Error; err != nil {
+// 		return errors.New("您没有权限分享此日记")
+// 	}
+
+// 	// 检查被分享用户是否已经有权限
+// 	var existingShare models.DiaryUser
+// 	err := r.db.First(&existingShare, "diary_id = ? AND user_id = ?", diaryId, shareUserId).Error
+// 	if err == nil {
+// 		return errors.New("该用户已经有此日记的权限")
+// 	} else if !errors.Is(err, gorm.ErrRecordNotFound) {
+// 		return err
+// 	}
+
+// 	// 创建新的分享记录
+// 	newDiaryUser := models.DiaryUser{
+// 		DiaryId: diaryId,
+// 		UserId:  shareUserId,
+// 	}
+// 	return r.db.Create(&newDiaryUser).Error
+// }
+
+// ShareDiaryToUser 分享日记给其他用户并设置权限
+func (r *diaryRepository) ShareDiaryToUser(diaryId uuid.UUID, shareUserId uuid.UUID, permissionId uuid.UUID, currentUserId uuid.UUID) error {
+	return r.db.Transaction(func(tx *gorm.DB) error {
+		// 检查当前用户是否有权限分享
+		var diaryUser models.DiaryUser
+		if err := tx.First(&diaryUser, "diary_id = ? AND user_id = ?", diaryId, currentUserId).Error; err != nil {
+			return errors.New("您没有权限分享此日记")
+		}
+
+		// 检查被分享用户是否已经有权限
+		var existingShare models.DiaryUser
+		err := tx.First(&existingShare, "diary_id = ? AND user_id = ?", diaryId, shareUserId).Error
+		if err == nil {
+			return errors.New("该用户已经有此日记的权限")
+		} else if !errors.Is(err, gorm.ErrRecordNotFound) {
+			return err
+		}
+
+		// 创建新的分享记录
+		newDiaryUser := models.DiaryUser{
+			DiaryId: diaryId,
+			UserId:  shareUserId,
+		}
+		if err := tx.Create(&newDiaryUser).Error; err != nil {
+			return err
+		}
+
+		// 更新日记的权限设置
+		if err := r.updatePermissionWithTransaction(tx, diaryId, permissionId, currentUserId); err != nil {
+			return err
+		}
+
+		return nil
+	})
+}
+
+// UpdateDiaryPermission 更新日记权限
+func (r *diaryRepository) UpdateDiaryPermission(diaryId uuid.UUID, permissionId uuid.UUID, currentUserId uuid.UUID) error {
+	return r.db.Transaction(func(tx *gorm.DB) error {
+		return r.updatePermissionWithTransaction(tx, diaryId, permissionId, currentUserId)
+	})
+}
+
+// updatePermissionWithTransaction 在事务中更新日记权限
+func (r *diaryRepository) updatePermissionWithTransaction(tx *gorm.DB, diaryId uuid.UUID, permissionId uuid.UUID, currentUserId uuid.UUID) error {
+	// 检查当前用户是否有权限更新
 	var diaryUser models.DiaryUser
-	if err := r.db.First(&diaryUser, "diary_id = ? AND user_id = ?", diaryId, currentUserId).Error; err != nil {
-		return errors.New("您没有权限分享此日记")
+	if err := tx.First(&diaryUser, "diary_id = ? AND user_id = ?", diaryId, currentUserId).Error; err != nil {
+		return errors.New("您没有权限更新此日记")
 	}
 
-	// 检查被分享用户是否已经有权限
-	var existingShare models.DiaryUser
-	err := r.db.First(&existingShare, "diary_id = ? AND user_id = ?", diaryId, shareUserId).Error
-	if err == nil {
-		return errors.New("该用户已经有此日记的权限")
-	} else if !errors.Is(err, gorm.ErrRecordNotFound) {
+	// 查找当前日记权限
+	var currentPermission models.DiaryDPermission
+	if err := tx.Where("diary_id = ?", diaryId).First(&currentPermission).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			// 不存在则创建
+			newPermission := models.DiaryDPermission{
+				DiaryId:       diaryId,
+				DPermissionId: permissionId,
+			}
+			return tx.Create(&newPermission).Error
+		}
 		return err
 	}
 
-	// 创建新的分享记录
-	newDiaryUser := models.DiaryUser{
-		DiaryId: diaryId,
-		UserId:  shareUserId,
-	}
-	return r.db.Create(&newDiaryUser).Error
+	// 已存在则更新
+	currentPermission.DPermissionId = permissionId
+	return tx.Save(&currentPermission).Error
 }

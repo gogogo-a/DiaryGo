@@ -47,6 +47,17 @@ type DiaryRequest struct {
 	VideoUrls    []string `json:"video_urls"`
 }
 
+// 更新日记请求参数 - 所有字段均为可选
+type UpdateDiaryRequest struct {
+	Title        string   `json:"title"`
+	Content      string   `json:"content"`
+	Address      string   `json:"address"`
+	PermissionId string   `json:"permission_id"`
+	TagIds       []string `json:"tag_ids"`
+	ImageUrls    []string `json:"image_urls"`
+	VideoUrls    []string `json:"video_urls"`
+}
+
 // 日记查询参数
 type DiaryQuery struct {
 	Page         int      `form:"page" binding:"omitempty,min=1"`
@@ -58,7 +69,8 @@ type DiaryQuery struct {
 
 // 分享日记请求
 type ShareDiaryRequest struct {
-	UserId string `json:"user_id" binding:"required"`
+	UserId       string `json:"user_id"`                          // 可选，要分享给的用户ID
+	PermissionId string `json:"permission_id" binding:"required"` // 必填，权限ID
 }
 
 // CreateDiary 创建日记
@@ -75,7 +87,7 @@ type ShareDiaryRequest struct {
 // @Router /api/v1/diary [post]
 func (h *DiaryHandler) CreateDiary(c *gin.Context) {
 	// 获取当前用户ID
-	userID, exists := c.Get("userId")
+	userID, exists := c.Get("userID")
 	if !exists {
 		response.Unauthorized(c, "未找到用户信息")
 		return
@@ -141,7 +153,7 @@ func (h *DiaryHandler) CreateDiary(c *gin.Context) {
 // @Router /api/v1/diary [get]
 func (h *DiaryHandler) ListDiaries(c *gin.Context) {
 	// 获取当前用户ID
-	userID, exists := c.Get("userId")
+	userID, exists := c.Get("userID")
 	if !exists {
 		response.Unauthorized(c, "未找到用户信息")
 		return
@@ -221,7 +233,7 @@ func (h *DiaryHandler) ListDiaries(c *gin.Context) {
 // @Router /api/v1/diary/{id} [put]
 func (h *DiaryHandler) UpdateDiary(c *gin.Context) {
 	// 获取当前用户ID
-	userID, exists := c.Get("userId")
+	userID, exists := c.Get("userID")
 	if !exists {
 		response.Unauthorized(c, "未找到用户信息")
 		return
@@ -236,7 +248,7 @@ func (h *DiaryHandler) UpdateDiary(c *gin.Context) {
 	}
 
 	// 解析请求
-	var req DiaryRequest
+	var req UpdateDiaryRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		response.ParamError(c, err.Error())
 		return
@@ -254,7 +266,7 @@ func (h *DiaryHandler) UpdateDiary(c *gin.Context) {
 		updateData["address"] = req.Address
 	}
 
-	// 转换权限ID
+	// 转换权限ID（如果有）
 	var permissionId *uuid.UUID
 	if req.PermissionId != "" {
 		pId, err := uuid.Parse(req.PermissionId)
@@ -265,15 +277,17 @@ func (h *DiaryHandler) UpdateDiary(c *gin.Context) {
 		permissionId = &pId
 	}
 
-	// 转换标签ID
+	// 转换标签ID（如果有）
 	var tagIds []uuid.UUID
-	for _, tagIdStr := range req.TagIds {
-		tagId, err := uuid.Parse(tagIdStr)
-		if err != nil {
-			response.ParamError(c, "无效的标签ID: "+tagIdStr)
-			return
+	if len(req.TagIds) > 0 {
+		for _, tagIdStr := range req.TagIds {
+			tagId, err := uuid.Parse(tagIdStr)
+			if err != nil {
+				response.ParamError(c, "无效的标签ID: "+tagIdStr)
+				return
+			}
+			tagIds = append(tagIds, tagId)
 		}
-		tagIds = append(tagIds, tagId)
 	}
 
 	// 调用仓库方法更新日记
@@ -310,7 +324,7 @@ func (h *DiaryHandler) UpdateDiary(c *gin.Context) {
 // @Router /api/v1/diary/{id} [delete]
 func (h *DiaryHandler) DeleteDiary(c *gin.Context) {
 	// 获取当前用户ID
-	userID, exists := c.Get("userId")
+	userID, exists := c.Get("userID")
 	if !exists {
 		response.Unauthorized(c, "未找到用户信息")
 		return
@@ -358,7 +372,7 @@ func (h *DiaryHandler) DeleteDiary(c *gin.Context) {
 // @Router /api/v1/diary/{id} [get]
 func (h *DiaryHandler) GetDiary(c *gin.Context) {
 	// 获取当前用户ID
-	userID, exists := c.Get("userId")
+	userID, exists := c.Get("userID")
 	if !exists {
 		response.Unauthorized(c, "未找到用户信息")
 		return
@@ -408,8 +422,8 @@ func (h *DiaryHandler) GetDiary(c *gin.Context) {
 }
 
 // ShareDiary 分享日记
-// @Summary 分享日记给其他用户
-// @Description 分享日记给其他用户
+// @Summary 分享日记给其他用户或修改权限
+// @Description 分享日记给其他用户或修改日记的权限
 // @Tags 日记
 // @Accept json
 // @Produce json
@@ -424,7 +438,7 @@ func (h *DiaryHandler) GetDiary(c *gin.Context) {
 // @Router /api/v1/diary/{id}/share [post]
 func (h *DiaryHandler) ShareDiary(c *gin.Context) {
 	// 获取当前用户ID
-	userID, exists := c.Get("userId")
+	userID, exists := c.Get("userID")
 	if !exists {
 		response.Unauthorized(c, "未找到用户信息")
 		return
@@ -445,29 +459,52 @@ func (h *DiaryHandler) ShareDiary(c *gin.Context) {
 		return
 	}
 
-	// 解析分享目标用户ID
-	shareUserId, err := uuid.Parse(req.UserId)
+	// 解析权限ID（必填）
+	permissionId, err := uuid.Parse(req.PermissionId)
 	if err != nil {
-		response.ParamError(c, "无效的用户ID格式")
+		response.ParamError(c, "无效的权限ID格式")
 		return
 	}
 
-	// 调用仓库方法分享日记
-	err = h.repo.ShareDiary(diaryId, shareUserId, userID.(uuid.UUID))
-	if err != nil {
-		if err.Error() == "您没有权限分享此日记" {
-			response.Forbidden(c, err.Error())
+	// 判断请求类型：分享给用户还是更新权限
+	if req.UserId != "" {
+		// 解析分享目标用户ID
+		shareUserId, err := uuid.Parse(req.UserId)
+		if err != nil {
+			response.ParamError(c, "无效的用户ID格式")
 			return
 		}
-		if err.Error() == "该用户已经有此日记的权限" {
-			response.ParamError(c, err.Error())
-			return
-		}
-		response.ServerError(c, "分享日记失败: "+err.Error())
-		return
-	}
 
-	response.SuccessWithMessage(c, "分享日记成功", nil)
+		// 调用仓库方法分享日记给指定用户
+		err = h.repo.ShareDiaryToUser(diaryId, shareUserId, permissionId, userID.(uuid.UUID))
+		if err != nil {
+			if err.Error() == "您没有权限分享此日记" {
+				response.Forbidden(c, err.Error())
+				return
+			}
+			if err.Error() == "该用户已经有此日记的权限" {
+				response.ParamError(c, err.Error())
+				return
+			}
+			response.ServerError(c, "分享日记失败: "+err.Error())
+			return
+		}
+
+		response.SuccessWithMessage(c, "分享日记成功", nil)
+	} else {
+		// 只更新日记权限
+		err = h.repo.UpdateDiaryPermission(diaryId, permissionId, userID.(uuid.UUID))
+		if err != nil {
+			if err.Error() == "您没有权限更新此日记" {
+				response.Forbidden(c, err.Error())
+				return
+			}
+			response.ServerError(c, "更新日记权限失败: "+err.Error())
+			return
+		}
+
+		response.SuccessWithMessage(c, "更新日记权限成功", nil)
+	}
 }
 
 // LikeDiary 点赞日记
@@ -485,7 +522,7 @@ func (h *DiaryHandler) ShareDiary(c *gin.Context) {
 // @Router /api/v1/diary/{id}/like [post]
 func (h *DiaryHandler) LikeDiary(c *gin.Context) {
 	// 获取当前用户ID
-	userID, exists := c.Get("userId")
+	userID, exists := c.Get("userID")
 	if !exists {
 		response.Unauthorized(c, "未找到用户信息")
 		return
@@ -532,7 +569,7 @@ func (h *DiaryHandler) LikeDiary(c *gin.Context) {
 // @Router /api/v1/diary/{id}/like [delete]
 func (h *DiaryHandler) UnlikeDiary(c *gin.Context) {
 	// 获取当前用户ID
-	userID, exists := c.Get("userId")
+	userID, exists := c.Get("userID")
 	if !exists {
 		response.Unauthorized(c, "未找到用户信息")
 		return
@@ -579,7 +616,7 @@ func (h *DiaryHandler) UnlikeDiary(c *gin.Context) {
 // @Router /api/v1/diary/{id}/like [get]
 func (h *DiaryHandler) CheckLikeDiary(c *gin.Context) {
 	// 获取当前用户ID
-	userID, exists := c.Get("userId")
+	userID, exists := c.Get("userID")
 	if !exists {
 		response.Unauthorized(c, "未找到用户信息")
 		return

@@ -42,5 +42,9 @@ func RegisterRoutes(router *gin.Engine) {
 		// 标签相关路由（需要认证）
 		tagHandler := NewTagHandler()
 		tagHandler.RegisterRoutes(protected)
+
+		// 权限相关路由（需要认证）
+		permissionHandler := NewDPermissionHandler()
+		permissionHandler.RegisterRoutes(protected)
 	}
 }
