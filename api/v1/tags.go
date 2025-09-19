@@ -24,12 +24,12 @@ func NewTagHandler() *TagHandler {
 func (h *TagHandler) RegisterRoutes(router *gin.RouterGroup) {
 	tags := router.Group("/tags")
 	{
-		tags.POST("", h.CreateTag)             // 创建标签
-		tags.GET("", h.GetTags)                // 获取标签列表
-		tags.GET("/:id", h.GetTag)             // 获取标签详情
-		tags.PUT("/:id", h.UpdateTag)          // 更新标签
-		tags.DELETE("/:id", h.DeleteTag)       // 删除标签
-		tags.POST("/batch", h.BatchCreateTags) // 批量创建标签
+		tags.POST("", h.CreateTag)       // 创建标签
+		tags.GET("", h.GetTags)          // 获取标签列表
+		tags.GET("/:id", h.GetTag)       // 获取标签详情
+		tags.PUT("/:id", h.UpdateTag)    // 更新标签
+		tags.DELETE("/:id", h.DeleteTag) // 删除标签
+		// tags.POST("/batch", h.BatchCreateTags) // 批量创建标签
 	}
 }
 
@@ -240,29 +240,29 @@ func (h *TagHandler) DeleteTag(c *gin.Context) {
 // @Failure 400 {object} response.Response
 // @Failure 500 {object} response.Response
 // @Router /api/v1/tags/batch [post]
-func (h *TagHandler) BatchCreateTags(c *gin.Context) {
-	var req BatchCreateTagsRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		response.ParamError(c, err.Error())
-		return
-	}
+// func (h *TagHandler) BatchCreateTags(c *gin.Context) {
+// 	var req BatchCreateTagsRequest
+// 	if err := c.ShouldBindJSON(&req); err != nil {
+// 		response.ParamError(c, err.Error())
+// 		return
+// 	}
 
-	// 转换请求数据到标签对象
-	var tags []*models.Tag
-	for _, t := range req.Tags {
-		tag := &models.Tag{
-			TagName:  t.TagName,
-			Type:     t.Type,
-			Category: t.Category,
-		}
-		tags = append(tags, tag)
-	}
+// 	// 转换请求数据到标签对象
+// 	var tags []*models.Tag
+// 	for _, t := range req.Tags {
+// 		tag := &models.Tag{
+// 			TagName:  t.TagName,
+// 			Type:     t.Type,
+// 			Category: t.Category,
+// 		}
+// 		tags = append(tags, tag)
+// 	}
 
-	// 调用仓库方法批量创建标签
-	if err := h.repo.BatchCreate(tags); err != nil {
-		response.ServerError(c, "批量创建标签失败: "+err.Error())
-		return
-	}
+// 	// 调用仓库方法批量创建标签
+// 	if err := h.repo.BatchCreate(tags); err != nil {
+// 		response.ServerError(c, "批量创建标签失败: "+err.Error())
+// 		return
+// 	}
 
-	response.SuccessWithMessage(c, "批量创建标签成功", nil)
-}
+// 	response.SuccessWithMessage(c, "批量创建标签成功", nil)
+// }

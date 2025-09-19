@@ -35,8 +35,8 @@ type TagRepository interface {
 	// Delete 删除标签
 	Delete(id uuid.UUID) error
 
-	// BatchCreate 批量创建标签
-	BatchCreate(tags []*models.Tag) error
+	// // BatchCreate 批量创建标签
+	// BatchCreate(tags []*models.Tag) error
 }
 
 // tagRepository 标签仓库实现
@@ -177,32 +177,32 @@ func (r *tagRepository) Delete(id uuid.UUID) error {
 	return r.db.Delete(&tag).Error
 }
 
-// BatchCreate 批量创建标签
-func (r *tagRepository) BatchCreate(tags []*models.Tag) error {
-	return r.db.Transaction(func(tx *gorm.DB) error {
-		for _, tag := range tags {
-			// 验证标签分类是否有效
-			if !isValidCategory(tag.Category) {
-				return errors.New("无效的标签分类: " + tag.Category)
-			}
+// // BatchCreate 批量创建标签
+// func (r *tagRepository) BatchCreate(tags []*models.Tag) error {
+// 	return r.db.Transaction(func(tx *gorm.DB) error {
+// 		for _, tag := range tags {
+// 			// 验证标签分类是否有效
+// 			if !isValidCategory(tag.Category) {
+// 				return errors.New("无效的标签分类: " + tag.Category)
+// 			}
 
-			// 检查同名标签是否已存在
-			var existingTag models.Tag
-			if err := tx.Where("tag_name = ? AND category = ?", tag.TagName, tag.Category).First(&existingTag).Error; err == nil {
-				// 如果已存在，跳过这个标签
-				continue
-			} else if !errors.Is(err, gorm.ErrRecordNotFound) {
-				return err
-			}
+// 			// 检查同名标签是否已存在
+// 			var existingTag models.Tag
+// 			if err := tx.Where("tag_name = ? AND category = ?", tag.TagName, tag.Category).First(&existingTag).Error; err == nil {
+// 				// 如果已存在，跳过这个标签
+// 				continue
+// 			} else if !errors.Is(err, gorm.ErrRecordNotFound) {
+// 				return err
+// 			}
 
-			// 创建标签
-			if err := tx.Create(tag).Error; err != nil {
-				return err
-			}
-		}
-		return nil
-	})
-}
+// 			// 创建标签
+// 			if err := tx.Create(tag).Error; err != nil {
+// 				return err
+// 			}
+// 		}
+// 		return nil
+// 	})
+// }
 
 // 验证标签分类是否有效
 func isValidCategory(category string) bool {
