@@ -76,7 +76,7 @@ func (h *UserLoginHandler) WechatLogin(c *gin.Context) {
 		response.ServerError(c, "微信小程序配置缺失")
 		return
 	}
-
+	fmt.Println("req.Code", req.Code)
 	// 调用微信API获取OpenID和SessionKey
 	wxResp, err := getWechatSession(appID, appSecret, req.Code)
 	if err != nil {

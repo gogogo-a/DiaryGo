@@ -59,18 +59,18 @@ func (h *BillHandler) RegisterRoutes(router *gin.RouterGroup) {
 
 // BillRequest 账单请求参数
 type BillRequest struct {
-	AccountBookID uuid.UUID   `json:"account_book_id" binding:"required"`
-	Amount        float64     `json:"amount" binding:"required"`
-	Type          string      `json:"type" binding:"required"` // income 收入 / expense 支出
-	TagIDs        []uuid.UUID `json:"tag_ids" binding:"required,min=1"`
-	BillTime      time.Time   `json:"bill_time" binding:"required"`
-	Remark        string      `json:"remark"`
-	ImageUrl      string      `json:"image_url"`
+	AccountBookID uuid.UUID `json:"account_book_id" binding:"required"`
+	Amount        float64   `json:"amount" binding:"required"`
+	Type          string    `json:"type" binding:"required"`          // income 收入 / expense 支出
+	TagIDs        []string  `json:"tag_ids" binding:"required,min=1"` // 修改为[]string
+	BillTime      time.Time `json:"bill_time" binding:"required"`
+	Remark        string    `json:"remark"`
+	ImageUrl      string    `json:"image_url"`
 }
 
 // BillQuery 账单查询参数
 type BillQuery struct {
-	AccountBookID string    `form:"account_book_id" binding:"required"`
+	AccountBookID string    `form:"accountBookID" binding:"required"` // 修改这里，确保与URL参数名称一致
 	Page          int       `form:"page" binding:"omitempty,min=1"`
 	PageSize      int       `form:"page_size" binding:"omitempty,min=1,max=100"`
 	Type          string    `form:"type"`
@@ -151,8 +151,19 @@ func (h *BillHandler) CreateBill(c *gin.Context) {
 		return
 	}
 
+	// 将TagIDs从字符串转换为UUID
+	var tagUUIDs []uuid.UUID
+	for _, tagIDStr := range req.TagIDs {
+		tagID, err := uuid.Parse(tagIDStr)
+		if err != nil {
+			response.ParamError(c, "无效的标签ID格式: "+tagIDStr)
+			return
+		}
+		tagUUIDs = append(tagUUIDs, tagID)
+	}
+
 	// 检查所有标签是否存在
-	for _, tagID := range req.TagIDs {
+	for _, tagID := range tagUUIDs {
 		_, err = h.tagRepo.GetByID(tagID)
 		if err != nil {
 			response.NotFound(c, "标签不存在: "+tagID.String())
@@ -170,7 +181,7 @@ func (h *BillHandler) CreateBill(c *gin.Context) {
 		ImageUrl:      req.ImageUrl,
 	}
 
-	if err := h.repo.Create(bill, req.TagIDs); err != nil {
+	if err := h.repo.Create(bill, tagUUIDs); err != nil {
 		response.ServerError(c, "创建账单失败")
 		return
 	}
@@ -241,9 +252,12 @@ func (h *BillHandler) ListBills(c *gin.Context) {
 	// 解析查询参数
 	var query BillQuery
 	if err := c.ShouldBindQuery(&query); err != nil {
-		response.ParamError(c, err.Error())
+		response.ParamError(c, "参数错误: "+err.Error())
 		return
 	}
+
+	// 查询参数调试输出
+	c.Header("X-Debug-AccountBookID", query.AccountBookID)
 
 	// 解析账本ID
 	accountBookID, err := uuid.Parse(query.AccountBookID)
@@ -384,6 +398,17 @@ func (h *BillHandler) UpdateBill(c *gin.Context) {
 		return
 	}
 
+	// 将TagIDs从字符串转换为UUID
+	var tagUUIDs []uuid.UUID
+	for _, tagIDStr := range req.TagIDs {
+		tagID, err := uuid.Parse(tagIDStr)
+		if err != nil {
+			response.ParamError(c, "无效的标签ID格式: "+tagIDStr)
+			return
+		}
+		tagUUIDs = append(tagUUIDs, tagID)
+	}
+
 	// 检查新账本ID是否与原账本ID不同，如果不同，需要检查用户是否有权限访问新账本
 	if req.AccountBookID != originalBill.AccountBookId {
 		_, err = h.accountBookUserRepo.GetByAccountBookIDAndUserID(req.AccountBookID, userID.(uuid.UUID))
@@ -394,7 +419,7 @@ func (h *BillHandler) UpdateBill(c *gin.Context) {
 	}
 
 	// 检查所有标签是否存在
-	for _, tagID := range req.TagIDs {
+	for _, tagID := range tagUUIDs {
 		_, err = h.tagRepo.GetByID(tagID)
 		if err != nil {
 			response.NotFound(c, "标签不存在: "+tagID.String())
@@ -409,7 +434,7 @@ func (h *BillHandler) UpdateBill(c *gin.Context) {
 	originalBill.Remark = req.Remark
 	originalBill.ImageUrl = req.ImageUrl
 
-	if err := h.repo.Update(originalBill, req.TagIDs); err != nil {
+	if err := h.repo.Update(originalBill, tagUUIDs); err != nil {
 		response.ServerError(c, "更新账单失败")
 		return
 	}

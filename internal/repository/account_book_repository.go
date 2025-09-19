@@ -49,7 +49,12 @@ func (r *accountBookRepository) GetByID(id uuid.UUID) (*models.AccountBook, erro
 
 func (r *accountBookRepository) GetAll(userID uuid.UUID) ([]models.AccountBook, error) {
 	var accountBooks []models.AccountBook
-	err := r.db.Where("user_id = ?", userID).Find(&accountBooks).Error
+	err := r.db.
+		Table("account_books").
+		Joins("JOIN account_book_users ON account_books.id = account_book_users.account_book_id").
+		Where("account_book_users.user_id = ?", userID).
+		Find(&accountBooks).Error
+
 	if err != nil {
 		return nil, err
 	}
@@ -61,5 +66,18 @@ func (r *accountBookRepository) Update(accountBook *models.AccountBook) error {
 }
 
 func (r *accountBookRepository) Delete(id uuid.UUID) error {
-	return r.db.Delete(&models.AccountBook{}, id).Error
+	// 使用事务确保操作的原子性
+	return r.db.Transaction(func(tx *gorm.DB) error {
+		// 先删除关联的account_book_users记录
+		if err := tx.Where("account_book_id = ?", id).Delete(&models.AccountBookUser{}).Error; err != nil {
+			return err
+		}
+
+		// 然后删除账本记录
+		if err := tx.Delete(&models.AccountBook{}, id).Error; err != nil {
+			return err
+		}
+
+		return nil
+	})
 }

@@ -51,17 +51,19 @@ func (h *AccountBookHandler) Create(c *gin.Context) {
 		return
 	}
 
+	// 先创建账本
+	if err := h.repo.Create(&accountBook); err != nil {
+		response.ServerError(c, "创建账本失败")
+		return
+	}
+
+	// 再创建账本与用户的关联
 	accountBookUser := models.AccountBookUser{
 		AccountBookId: accountBook.Id,
 		UserId:        user.Id,
 	}
 	if err := h.accountBookUserRepo.Create(&accountBookUser); err != nil {
-		response.ServerError(c, "创建账本用户失败")
-		return
-	}
-
-	if err := h.repo.Create(&accountBook); err != nil {
-		response.ServerError(c, "创建账本失败")
+		response.ServerError(c, "创建账本用户关联失败")
 		return
 	}
 

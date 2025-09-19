@@ -1,6 +1,7 @@
 package middleware
 
 import (
+	"fmt"
 	"strings"
 
 	"github.com/gin-gonic/gin"
@@ -30,6 +31,7 @@ func Auth() gin.HandlerFunc {
 		// 解析令牌
 		claims, err := jwt.ParseToken(parts[1])
 		if err != nil {
+			fmt.Println("无效的认证令牌", err, parts[1])
 			response.Unauthorized(c, "无效的认证令牌")
 			c.Abort()
 			return
