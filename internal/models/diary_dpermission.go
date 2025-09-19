@@ -18,7 +18,9 @@ func (DiaryDPermission) TableName() string {
 }
 
 func (d *DiaryDPermission) BeforeCreate(tx *gorm.DB) error {
-	d.Id = uuid.New()
+	if d.Id == uuid.Nil {
+		d.Id = uuid.New()
+	}
 	return nil
 }
 

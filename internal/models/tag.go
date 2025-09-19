@@ -21,7 +21,9 @@ func (Tag) TableName() string {
 }
 
 func (t *Tag) BeforeCreate(tx *gorm.DB) error {
-	t.Id = uuid.New()
+	if t.Id == uuid.Nil {
+		t.Id = uuid.New()
+	}
 	t.CreatedAt = time.Now()
 	t.UpdatedAt = time.Now()
 	return nil

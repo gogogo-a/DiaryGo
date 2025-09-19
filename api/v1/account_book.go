@@ -114,7 +114,7 @@ func (h *AccountBookHandler) Update(c *gin.Context) {
 	}
 
 	// 获取账本用户关系，检验权限
-	accountBookUser, err := h.accountBookUserRepo.GetByAccountBookID(accountBookID)
+	accountBookUser, err := h.accountBookUserRepo.GetByAccountBookIDAndUserID(accountBookID, userID.(uuid.UUID))
 	if err != nil {
 		response.ServerError(c, "获取账本用户关系失败")
 		return
@@ -136,14 +136,18 @@ func (h *AccountBookHandler) Update(c *gin.Context) {
 		return
 	}
 
-	// 获取原始账本
-	originalAccountBook := accountBookUser.AccountBook
+	// 直接获取原始账本，而不是从accountBookUser中获取
+	originalAccountBook, err := h.repo.GetByID(accountBookID)
+	if err != nil {
+		response.ServerError(c, "获取账本失败")
+		return
+	}
 
 	// 只更新名称
 	originalAccountBook.Name = nameUpdate.Name
 
 	// 保存更新
-	if err := h.repo.Update(&originalAccountBook); err != nil {
+	if err := h.repo.Update(originalAccountBook); err != nil {
 		response.ServerError(c, "更新账本失败")
 		return
 	}
@@ -152,10 +156,39 @@ func (h *AccountBookHandler) Update(c *gin.Context) {
 }
 
 func (h *AccountBookHandler) Delete(c *gin.Context) {
-	id := c.Param("id")
-	if err := h.repo.Delete(uuid.MustParse(id)); err != nil {
+	// 获取当前用户ID
+	userID, exists := c.Get("userID")
+	if !exists {
+		response.Unauthorized(c, "未找到用户信息")
+		return
+	}
+
+	// 解析账本ID
+	idStr := c.Param("id")
+	accountBookID, err := uuid.Parse(idStr)
+	if err != nil {
+		response.ParamError(c, "无效的账本ID格式")
+		return
+	}
+
+	// 获取账本的第一个用户（创建者）
+	creator, err := h.accountBookUserRepo.GetFirstUserByAccountBookID(accountBookID)
+	if err != nil {
+		response.NotFound(c, "找不到账本或账本没有关联用户")
+		return
+	}
+
+	// 验证当前用户是否是创建者
+	if creator.Id != userID.(uuid.UUID) {
+		response.Forbidden(c, "只有账本创建者才能删除账本")
+		return
+	}
+
+	// 执行删除操作
+	if err := h.repo.Delete(accountBookID); err != nil {
 		response.ServerError(c, "删除账本失败")
 		return
 	}
+
 	response.SuccessWithMessage(c, "删除账本成功", nil)
 }

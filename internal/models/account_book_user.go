@@ -22,7 +22,9 @@ func (AccountBookUser) TableName() string {
 }
 
 func (a *AccountBookUser) BeforeCreate(tx *gorm.DB) error {
-	a.Id = uuid.New()
+	if a.Id == uuid.Nil {
+		a.Id = uuid.New()
+	}
 	a.CreatedAt = time.Now()
 	a.UpdatedAt = time.Now()
 	return nil

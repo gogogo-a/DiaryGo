@@ -8,16 +8,16 @@ import (
 )
 
 type AccountBookUserRepository interface {
-	// Create 创建账本用户关联（授予用户账本权限）
+	// Create 创建账本用户关联
 	Create(accountBookUser *models.AccountBookUser) error
 
 	// GetByID 根据ID获取账本用户关联
 	GetByID(id uuid.UUID) (*models.AccountBookUser, error)
 
-	// GetByUserID 获取用户的账本关联
+	// GetByUserID 根据用户ID获取账本用户关联
 	GetByUserID(userID uuid.UUID) (*models.AccountBookUser, error)
 
-	// GetByAccountBookID 获取账本的用户关联
+	// GetByAccountBookID 根据账本ID获取账本用户关联
 	GetByAccountBookID(accountBookID uuid.UUID) (*models.AccountBookUser, error)
 
 	// GetByAccountBookIDAndUserID 根据账本ID和用户ID获取特定的账本用户关联
@@ -25,6 +25,9 @@ type AccountBookUserRepository interface {
 
 	// GetAllUsersByAccountBookID 获取账本的所有用户
 	GetAllUsersByAccountBookID(accountBookID uuid.UUID) ([]models.User, error)
+
+	// GetFirstUserByAccountBookID 获取账本的第一个用户（创建者）
+	GetFirstUserByAccountBookID(accountBookID uuid.UUID) (*models.User, error)
 
 	// Delete 根据ID删除账本用户关联
 	Delete(id uuid.UUID) error
@@ -57,7 +60,7 @@ func (r *accountBookUserRepository) Create(accountBookUser *models.AccountBookUs
 
 func (r *accountBookUserRepository) GetByID(id uuid.UUID) (*models.AccountBookUser, error) {
 	var accountBookUser models.AccountBookUser
-	err := r.db.Where("id = ?", id).First(&accountBookUser).Error
+	err := r.db.Where("id = ?", id).Order("created_at asc").First(&accountBookUser).Error
 	if err != nil {
 		return nil, err
 	}
@@ -66,7 +69,7 @@ func (r *accountBookUserRepository) GetByID(id uuid.UUID) (*models.AccountBookUs
 
 func (r *accountBookUserRepository) GetByUserID(userID uuid.UUID) (*models.AccountBookUser, error) {
 	var accountBookUser models.AccountBookUser
-	err := r.db.Where("user_id = ?", userID).First(&accountBookUser).Error
+	err := r.db.Where("user_id = ?", userID).Order("created_at asc").First(&accountBookUser).Error
 	if err != nil {
 		return nil, err
 	}
@@ -75,7 +78,7 @@ func (r *accountBookUserRepository) GetByUserID(userID uuid.UUID) (*models.Accou
 
 func (r *accountBookUserRepository) GetByAccountBookID(accountBookID uuid.UUID) (*models.AccountBookUser, error) {
 	var accountBookUser models.AccountBookUser
-	err := r.db.Where("account_book_id = ?", accountBookID).First(&accountBookUser).Error
+	err := r.db.Where("account_book_id = ?", accountBookID).Order("created_at asc").First(&accountBookUser).Error
 	if err != nil {
 		return nil, err
 	}
@@ -107,7 +110,7 @@ func (r *accountBookUserRepository) GetAllUsersByAccountBookID(accountBookID uui
 // GetByAccountBookIDAndUserID 根据账本ID和用户ID获取账本用户关联
 func (r *accountBookUserRepository) GetByAccountBookIDAndUserID(accountBookID, userID uuid.UUID) (*models.AccountBookUser, error) {
 	var accountBookUser models.AccountBookUser
-	err := r.db.Where("account_book_id = ? AND user_id = ?", accountBookID, userID).First(&accountBookUser).Error
+	err := r.db.Where("account_book_id = ? AND user_id = ?", accountBookID, userID).Order("created_at asc").First(&accountBookUser).Error
 	if err != nil {
 		return nil, err
 	}
@@ -117,4 +120,19 @@ func (r *accountBookUserRepository) GetByAccountBookIDAndUserID(accountBookID, u
 // DeleteByAccountBookIDAndUserID 根据账本ID和用户ID删除账本用户关联
 func (r *accountBookUserRepository) DeleteByAccountBookIDAndUserID(accountBookID, userID uuid.UUID) error {
 	return r.db.Where("account_book_id = ? AND user_id = ?", accountBookID, userID).Delete(&models.AccountBookUser{}).Error
+}
+
+// GetFirstUserByAccountBookID 获取账本的第一个用户（创建者）
+func (r *accountBookUserRepository) GetFirstUserByAccountBookID(accountBookID uuid.UUID) (*models.User, error) {
+	var user models.User
+	err := r.db.Table("users").
+		Select("users.*").
+		Joins("JOIN account_book_users ON users.id = account_book_users.user_id").
+		Where("account_book_users.account_book_id = ?", accountBookID).
+		Order("account_book_users.created_at ASC").
+		First(&user).Error
+	if err != nil {
+		return nil, err
+	}
+	return &user, nil
 }

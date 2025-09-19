@@ -17,6 +17,8 @@ func (DiaryVideo) TableName() string {
 }
 
 func (d *DiaryVideo) BeforeCreate(tx *gorm.DB) error {
-	d.Id = uuid.New()
+	if d.Id == uuid.Nil {
+		d.Id = uuid.New()
+	}
 	return nil
 }

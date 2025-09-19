@@ -22,7 +22,9 @@ func (DiaryUser) TableName() string {
 }
 
 func (d *DiaryUser) BeforeCreate(tx *gorm.DB) error {
-	d.Id = uuid.New()
+	if d.Id == uuid.Nil {
+		d.Id = uuid.New()
+	}
 	d.CreatedAt = time.Now()
 	d.UpdatedAt = time.Now()
 	return nil

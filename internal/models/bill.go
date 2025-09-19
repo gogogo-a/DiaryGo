@@ -26,7 +26,9 @@ func (Bill) TableName() string {
 }
 
 func (b *Bill) BeforeCreate(tx *gorm.DB) error {
-	b.Id = uuid.New()
+	if b.Id == uuid.Nil {
+		b.Id = uuid.New()
+	}
 	b.CreatedAt = time.Now()
 	b.UpdatedAt = time.Now()
 	return nil

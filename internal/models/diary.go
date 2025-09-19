@@ -27,7 +27,9 @@ func (Diary) TableName() string {
 
 // BeforeCreate 创建前的钩子
 func (d *Diary) BeforeCreate(tx *gorm.DB) error {
-	d.Id = uuid.New()
+	if d.Id == uuid.Nil {
+		d.Id = uuid.New()
+	}
 	d.CreatedAt = time.Now()
 	d.UpdatedAt = time.Now()
 	return nil

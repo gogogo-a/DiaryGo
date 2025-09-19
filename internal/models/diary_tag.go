@@ -18,6 +18,8 @@ func (DiaryTag) TableName() string {
 }
 
 func (d *DiaryTag) BeforeCreate(tx *gorm.DB) error {
-	d.Id = uuid.New()
+	if d.Id == uuid.Nil {
+		d.Id = uuid.New()
+	}
 	return nil
 }

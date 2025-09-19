@@ -18,6 +18,8 @@ func (BillTag) TableName() string {
 }
 
 func (b *BillTag) BeforeCreate(tx *gorm.DB) error {
-	b.Id = uuid.New()
+	if b.Id == uuid.Nil {
+		b.Id = uuid.New()
+	}
 	return nil
 }

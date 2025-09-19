@@ -1,6 +1,7 @@
 package repository
 
 import (
+	"fmt"
 	"time"
 
 	"github.com/google/uuid"
@@ -96,7 +97,10 @@ func (r *billRepository) Create(bill *models.Bill, tagIDs []uuid.UUID) error {
 // GetByID 根据ID获取账单
 func (r *billRepository) GetByID(id uuid.UUID) (*models.Bill, error) {
 	var bill models.Bill
-	err := r.db.Where("id = ?", id).First(&bill).Error
+	err := r.db.Where("id = ?", id).
+		Preload("AccountBook").
+		Preload("User").
+		First(&bill).Error
 	if err != nil {
 		return nil, err
 	}
@@ -106,7 +110,11 @@ func (r *billRepository) GetByID(id uuid.UUID) (*models.Bill, error) {
 // GetBillWithTags 获取账单及其标签
 func (r *billRepository) GetBillWithTags(id uuid.UUID) (*models.Bill, []models.Tag, error) {
 	var bill models.Bill
-	if err := r.db.Where("id = ?", id).First(&bill).Error; err != nil {
+	// 添加Preload预加载关联表数据
+	if err := r.db.Where("id = ?", id).
+		Preload("AccountBook").
+		Preload("User").
+		First(&bill).Error; err != nil {
 		return nil, nil, err
 	}
 
@@ -116,6 +124,22 @@ func (r *billRepository) GetBillWithTags(id uuid.UUID) (*models.Bill, []models.T
 		Where("bill_tags.bill_id = ?", id).
 		Find(&tags).Error; err != nil {
 		return nil, nil, err
+	}
+
+	// 验证并确保ID值正确
+	if bill.Id != id {
+		// 如果ID不匹配，说明存在数据异常，记录日志并使用传入的ID
+		bill.Id = id
+	}
+
+	// 额外查询确保账单的账本和用户关系是正确的
+	var originalBill models.Bill
+	if err := r.db.Select("account_book_id", "user_id").
+		Where("id = ?", id).
+		First(&originalBill).Error; err == nil {
+		// 确保使用数据库中的原始值
+		bill.AccountBookId = originalBill.AccountBookId
+		bill.UserId = originalBill.UserId
 	}
 
 	return &bill, tags, nil
@@ -180,9 +204,14 @@ func (r *billRepository) GetBills(
 		return nil, 0, err
 	}
 
-	// 分页查询
+	// 分页查询，添加预加载
 	offset := (page - 1) * pageSize
-	if err := query.Offset(offset).Limit(pageSize).Order("created_at DESC").Find(&bills).Error; err != nil {
+	if err := query.Preload("AccountBook").
+		Preload("User").
+		Offset(offset).
+		Limit(pageSize).
+		Order("created_at DESC").
+		Find(&bills).Error; err != nil {
 		return nil, 0, err
 	}
 
@@ -192,10 +221,16 @@ func (r *billRepository) GetBills(
 // Update 更新账单
 func (r *billRepository) Update(bill *models.Bill, tagIDs []uuid.UUID) error {
 	return r.db.Transaction(func(tx *gorm.DB) error {
-		// 更新账单基本信息
-		if err := tx.Save(bill).Error; err != nil {
-			return err
-		}
+		// 保存原始的账本ID和用户ID
+		// originalAccountBookId := bill.AccountBookId
+		// originalUserId := bill.UserId
+
+		fmt.Println("更新前的bill", bill.AccountBookId, bill.UserId)
+		// 更新账单基本信息，只更新允许修改的字段
+		tx.Model(bill).UpdateColumn("amount", bill.Amount)
+		tx.Model(bill).UpdateColumn("type", bill.Type)
+		tx.Model(bill).UpdateColumn("remark", bill.Remark)
+		tx.Model(bill).UpdateColumn("image_url", bill.ImageUrl)
 
 		// 删除现有的标签关联
 		if err := tx.Where("bill_id = ?", bill.Id).Delete(&models.BillTag{}).Error; err != nil {
@@ -213,6 +248,7 @@ func (r *billRepository) Update(bill *models.Bill, tagIDs []uuid.UUID) error {
 			}
 		}
 
+		fmt.Println("更新后的bill", bill.AccountBookId, bill.UserId)
 		return nil
 	})
 }

@@ -62,6 +62,8 @@ func (r *accountBookRepository) GetAll(userID uuid.UUID) ([]models.AccountBook, 
 }
 
 func (r *accountBookRepository) Update(accountBook *models.AccountBook) error {
+	// 确保有明确的WHERE条件，只更新特定ID的账本
+	// return r.db.Model(&models.AccountBook{}).Where("id = ?", accountBook.Id).UpdateColumn("name", accountBook.Name).Error
 	return r.db.Save(accountBook).Error
 }
 

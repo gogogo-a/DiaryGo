@@ -21,7 +21,9 @@ func (DiaryLike) TableName() string {
 }
 
 func (d *DiaryLike) BeforeCreate(tx *gorm.DB) error {
-	d.Id = uuid.New()
+	if d.Id == uuid.Nil {
+		d.Id = uuid.New()
+	}
 	d.CreatedAt = time.Now()
 	return nil
 }

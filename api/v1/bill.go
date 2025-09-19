@@ -1,6 +1,7 @@
 package v1
 
 import (
+	"fmt"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -84,7 +85,7 @@ type BillQuery struct {
 
 // StatsQuery 统计查询参数
 type StatsQuery struct {
-	AccountBookID string    `form:"account_book_id" binding:"required"`
+	AccountBookID string    `form:"AccountBookID" binding:"required"` // 改为驼峰命名，与BillQuery保持一致
 	StartTime     time.Time `form:"start_time" time_format:"2006-01-02"`
 	EndTime       time.Time `form:"end_time" time_format:"2006-01-02"`
 	GroupBy       string    `form:"group_by" binding:"omitempty,oneof=day week month year"`
@@ -409,15 +410,6 @@ func (h *BillHandler) UpdateBill(c *gin.Context) {
 		tagUUIDs = append(tagUUIDs, tagID)
 	}
 
-	// 检查新账本ID是否与原账本ID不同，如果不同，需要检查用户是否有权限访问新账本
-	if req.AccountBookID != originalBill.AccountBookId {
-		_, err = h.accountBookUserRepo.GetByAccountBookIDAndUserID(req.AccountBookID, userID.(uuid.UUID))
-		if err != nil {
-			response.Forbidden(c, "您没有权限访问目标账本")
-			return
-		}
-	}
-
 	// 检查所有标签是否存在
 	for _, tagID := range tagUUIDs {
 		_, err = h.tagRepo.GetByID(tagID)
@@ -428,7 +420,7 @@ func (h *BillHandler) UpdateBill(c *gin.Context) {
 	}
 
 	// 更新账单信息
-	originalBill.AccountBookId = req.AccountBookID
+	// 注意：保留原始的AccountBookId和UserId，不允许更改
 	originalBill.Amount = req.Amount
 	originalBill.Type = req.Type
 	originalBill.Remark = req.Remark
@@ -499,6 +491,7 @@ func (h *BillHandler) DeleteBill(c *gin.Context) {
 		response.NotFound(c, "账单不存在")
 		return
 	}
+	fmt.Println(bill)
 
 	// 检查用户是否有权限访问该账本
 	_, err = h.accountBookUserRepo.GetByAccountBookIDAndUserID(bill.AccountBookId, userID.(uuid.UUID))
