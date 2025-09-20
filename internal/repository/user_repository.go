@@ -14,6 +14,8 @@ type UserRepository interface {
 
 	// GetByID 根据ID获取用户
 	GetByID(id uuid.UUID) (*models.User, error)
+	//Update 更新用户
+	Update(user *models.User) error
 }
 
 // userRepository 用户仓库实现
@@ -63,4 +65,9 @@ func (r *userRepository) GetByID(id uuid.UUID) (*models.User, error) {
 		return nil, err
 	}
 	return &user, nil
+}
+
+// Update 更新用户
+func (r *userRepository) Update(user *models.User) error {
+	return r.db.Model(&models.User{}).Where("id = ?", user.Id).Updates(user).Error
 }

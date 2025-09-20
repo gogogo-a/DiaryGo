@@ -1,6 +1,8 @@
 package v1
 
 import (
+	"time"
+
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"github.com/haogeng/DiaryGo/internal/repository"
@@ -28,11 +30,13 @@ func NewUserHandler() *UserHandler {
 // 注册以下路由:
 // - GET /users - 获取用户列表，支持分页和搜索
 // - GET /users/:id - 获取特定用户详情
+// - PUT /users/:id - 更新用户
 func (h *UserHandler) RegisterRoutes(router *gin.RouterGroup) {
 	users := router.Group("/users")
 	{
 		users.GET("", h.ListUsers)
 		users.GET("/:id", h.GetUser)
+		users.PUT("", h.UpdateUser)
 	}
 }
 
@@ -41,6 +45,19 @@ type UserQuery struct {
 	Page     int    `form:"page" binding:"omitempty,min=1"`
 	PageSize int    `form:"page_size" binding:"omitempty,min=1,max=100"`
 	Keyword  string `form:"keyword" binding:"omitempty"`
+}
+//
+type UpdateUserRequest struct {
+	UserName string `json:"user_name"`
+	Email    string `json:"email"`
+	Phone    string `json:"phone"`
+	Gender   string `json:"gender"`
+	Birthday *time.Time `json:"birthday"`
+	Address  string `json:"address"`
+	Remark   string `json:"remark"`
+	Avatar   string `json:"avatar"`
+	// Password string `json:"password"`
+
 }
 
 // ListUsers 获取用户列表
@@ -159,5 +176,34 @@ func (h *UserHandler) GetUser(c *gin.Context) {
 		return
 	}
 
+	response.Success(c, user)
+}
+
+// UpdateUser 更新用户
+func (h *UserHandler) UpdateUser(c *gin.Context) {
+	userID, _ := c.Get("userID")
+	var req UpdateUserRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.ParamError(c, err.Error())
+		return
+	}
+	user, err := h.repo.GetByID(userID.(uuid.UUID))
+	if err != nil {
+		response.NotFound(c, "用户不存在")
+		return
+	}
+	user.UserName = req.UserName
+	user.Email = req.Email
+	user.Phone = req.Phone
+	user.Gender = req.Gender
+	user.Birthday = req.Birthday
+	user.Address = req.Address
+	user.Remark = req.Remark
+	user.Avatar = req.Avatar
+	// user.Password = req.Password
+	if err := h.repo.Update(user); err != nil {
+		response.ServerError(c, "更新用户失败")
+		return
+	}
 	response.Success(c, user)
 }
