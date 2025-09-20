@@ -14,6 +14,10 @@ func RegisterRoutes(router *gin.Engine) {
 	userLoginHandler := NewUserLoginHandler()
 	userLoginHandler.RegisterRoutes(v1)
 
+	// 权限配置相关路由（不需要认证，便于客户端初始化）
+	permissionHandler := NewDPermissionHandler()
+	permissionHandler.RegisterRoutes(v1)
+
 	// 注册需要认证的路由
 	// 使用Auth中间件保护以下路由
 	protected := v1.Group("")
@@ -22,6 +26,10 @@ func RegisterRoutes(router *gin.Engine) {
 		// 日记相关路由（需要认证）
 		diaryHandler := NewDiaryHandler()
 		diaryHandler.RegisterRoutes(protected)
+
+		// 日记扩展相关路由（图片、视频管理）
+		diaryExtendsHandler := NewDiaryExtendsHandler()
+		diaryExtendsHandler.RegisterRoutes(protected)
 
 		// 账本相关路由（需要认证）
 		accountBookHandler := NewAccountBookHandler()
@@ -42,9 +50,5 @@ func RegisterRoutes(router *gin.Engine) {
 		// 标签相关路由（需要认证）
 		tagHandler := NewTagHandler()
 		tagHandler.RegisterRoutes(protected)
-
-		// 权限相关路由（需要认证）
-		permissionHandler := NewDPermissionHandler()
-		permissionHandler.RegisterRoutes(protected)
 	}
 }

@@ -110,6 +110,109 @@ response.Forbidden(c, "禁止访问")
 // @Router /api/v1/tags [post]
 ```
 
+### API响应数据处理规范
+
+1. **关联对象处理**：避免在API响应中包含未加载的空关联对象
+
+```go
+// 错误示例：直接返回带有未加载关联的模型
+func (h *DiaryImageHandler) AddImage(c *gin.Context) {
+    // ... 创建图片逻辑
+    image, err := h.repo.AddImage(diaryId, imageUrl)
+    // 直接返回会包含空的关联对象
+    response.Success(c, image) // 错误：返回了空的diary对象
+}
+
+// 正确示例：返回自定义响应对象
+func (h *DiaryImageHandler) AddImage(c *gin.Context) {
+    // ... 创建图片逻辑
+    image, err := h.repo.AddImage(diaryId, imageUrl)
+    
+    // 创建精简响应对象
+    result := map[string]interface{}{
+        "id":        image.Id,
+        "diary_id":  image.DiaryId,
+        "image_url": image.ImageUrl,
+    }
+    
+    response.Success(c, result)
+}
+```
+
+2. **集合数据处理**：处理关联集合时，创建精简响应
+
+```go
+// 获取集合数据时的处理
+func (h *DiaryImageHandler) GetImages(c *gin.Context) {
+    // ... 获取图片列表逻辑
+    images, err := h.repo.GetDiaryImages(diaryId)
+    
+    // 创建精简响应列表
+    var result []map[string]interface{}
+    for _, image := range images {
+        result = append(result, map[string]interface{}{
+            "id":        image.Id,
+            "diary_id":  image.DiaryId,
+            "image_url": image.ImageUrl,
+        })
+    }
+    
+    response.Success(c, result)
+}
+```
+
+3. **预加载关联**：当确实需要返回关联对象时，确保完整预加载
+
+```go
+// 需要返回完整关联对象时
+func (r *diaryRepository) GetDiaryWithDetails(diaryId uuid.UUID) (*models.Diary, error) {
+    var diary models.Diary
+    err := r.db.Preload("Tags").
+        Preload("Images").
+        Preload("Videos").
+        Preload("Permission").
+        Where("id = ?", diaryId).
+        First(&diary).Error
+    
+    return &diary, err
+}
+```
+
+4. **自定义DTO**：对于复杂对象，定义专门的DTO（数据传输对象）
+
+```go
+// DiaryDetailDTO 日记详情数据传输对象
+type DiaryDetailDTO struct {
+    Id          string             `json:"id"`
+    Title       string             `json:"title"`
+    Content     string             `json:"content"`
+    Address     string             `json:"address"`
+    Like        int                `json:"like"`
+    CreatedAt   time.Time          `json:"created_at"`
+    Tags        []TagDTO           `json:"tags"`
+    Images      []ImageDTO         `json:"images"`
+    Videos      []VideoDTO         `json:"videos"`
+    Permission  PermissionDTO      `json:"permission"`
+}
+
+// 转换函数
+func toDiaryDetailDTO(diary *models.Diary, tags []models.Tag, ...) DiaryDetailDTO {
+    // 转换逻辑...
+}
+```
+
+5. **空值处理**：对可能为空的字段进行合理处理
+
+```go
+// 处理可能为nil的指针
+func getUserName(user *models.User) string {
+    if user == nil {
+        return ""
+    }
+    return user.UserName
+}
+```
+
 ## 模型规范
 
 ### 文件结构
