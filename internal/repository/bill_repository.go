@@ -273,49 +273,58 @@ func (r *billRepository) GetStats(accountBookID uuid.UUID, startTime, endTime ti
 		TagStats: make(map[string]float64),
 	}
 
-	// 基础查询
-	query := r.db.Model(&models.Bill{}).Where("account_book_id = ?", accountBookID)
+	// 为收入和支出分别创建基础查询
+	incomeQuery := r.db.Model(&models.Bill{}).Where("account_book_id = ? AND type = ?", accountBookID, "income")
+	expenseQuery := r.db.Model(&models.Bill{}).Where("account_book_id = ? AND type = ?", accountBookID, "expense")
 
 	// 添加时间范围
 	if !startTime.IsZero() {
-		query = query.Where("created_at >= ?", startTime)
+		incomeQuery = incomeQuery.Where("created_at >= ?", startTime)
+		expenseQuery = expenseQuery.Where("created_at >= ?", startTime)
 	}
 	if !endTime.IsZero() {
-		query = query.Where("created_at <= ?", endTime)
+		incomeQuery = incomeQuery.Where("created_at <= ?", endTime)
+		expenseQuery = expenseQuery.Where("created_at <= ?", endTime)
 	}
 
 	// 计算总收入
-	if err := query.Where("type = ?", "income").Select("COALESCE(SUM(amount), 0)").Scan(&stats.TotalIncome).Error; err != nil {
+	if err := incomeQuery.Select("COALESCE(SUM(amount), 0)").Scan(&stats.TotalIncome).Error; err != nil {
 		return nil, err
 	}
 
 	// 计算总支出
-	if err := query.Where("type = ?", "expense").Select("COALESCE(SUM(amount), 0)").Scan(&stats.TotalExpense).Error; err != nil {
+	if err := expenseQuery.Select("COALESCE(SUM(amount), 0)").Scan(&stats.TotalExpense).Error; err != nil {
 		return nil, err
 	}
 
 	// 计算净额
 	stats.NetAmount = stats.TotalIncome - stats.TotalExpense
 
-	// 按标签统计
+	// 按标签统计 - 区分收入和支出
 	var tagStats []struct {
 		TagID  uuid.UUID
 		Name   string
+		Type   string
 		Amount float64
 	}
 
 	if err := r.db.Table("bills").
-		Select("tags.id as tag_id, tags.tag_name as name, SUM(bills.amount) as amount").
+		Select("tags.id as tag_id, tags.tag_name as name, bills.type as type, SUM(bills.amount) as amount").
 		Joins("JOIN bill_tags ON bills.id = bill_tags.bill_id").
 		Joins("JOIN tags ON bill_tags.tag_id = tags.id").
 		Where("bills.account_book_id = ?", accountBookID).
-		Group("tags.id, tags.tag_name").
+		Group("tags.id, tags.tag_name, bills.type").
 		Scan(&tagStats).Error; err != nil {
 		return nil, err
 	}
 
+	// 处理标签统计，区分收入和支出
 	for _, ts := range tagStats {
-		stats.TagStats[ts.Name] = ts.Amount
+		if ts.Type == "income" {
+			stats.TagStats[ts.Name+"收入"] = ts.Amount
+		} else {
+			stats.TagStats[ts.Name+"支出"] = ts.Amount
+		}
 	}
 
 	// 按时间分组统计
@@ -333,45 +342,71 @@ func (r *billRepository) GetStats(accountBookID uuid.UUID, startTime, endTime ti
 		}
 
 		if groupFormat != "" {
-			var groupStats []struct {
+			// 改用两个独立的查询，然后合并结果
+			type GroupResult struct {
 				GroupKey string
-				Income   float64
-				Expense  float64
+				Amount   float64
 			}
 
-			// 按时间分组查询收支情况
-			subQuery := r.db.Table("(?) as income_table, (?) as expense_table",
-				r.db.Model(&models.Bill{}).
-					Select(groupFormat+" as group_key, COALESCE(SUM(amount), 0) as income").
-					Where("account_book_id = ? AND type = ?", accountBookID, "income").
-					Group(groupFormat),
-				r.db.Model(&models.Bill{}).
-					Select(groupFormat+" as group_key, COALESCE(SUM(amount), 0) as expense").
-					Where("account_book_id = ? AND type = ?", accountBookID, "expense").
-					Group(groupFormat),
-			).Select("income_table.group_key, income_table.income, expense_table.expense").
-				Where("income_table.group_key = expense_table.group_key")
+			var incomeResults []GroupResult
+			var expenseResults []GroupResult
 
-			// 添加时间范围
+			// 收入查询
+			incomeSubQuery := r.db.Model(&models.Bill{}).
+				Select(groupFormat+" as group_key, COALESCE(SUM(amount), 0) as amount").
+				Where("account_book_id = ? AND type = ?", accountBookID, "income")
+
 			if !startTime.IsZero() {
-				subQuery = subQuery.Where("income_table.created_at >= ?", startTime)
+				incomeSubQuery = incomeSubQuery.Where("created_at >= ?", startTime)
 			}
 			if !endTime.IsZero() {
-				subQuery = subQuery.Where("income_table.created_at <= ?", endTime)
+				incomeSubQuery = incomeSubQuery.Where("created_at <= ?", endTime)
 			}
 
-			if err := subQuery.Scan(&groupStats).Error; err != nil {
+			if err := incomeSubQuery.Group(groupFormat).Scan(&incomeResults).Error; err != nil {
 				return nil, err
 			}
 
-			// 转换为返回格式
-			for _, gs := range groupStats {
-				stats.GroupStats = append(stats.GroupStats, BillGroupStats{
-					GroupKey:  gs.GroupKey,
-					Income:    gs.Income,
-					Expense:   gs.Expense,
-					NetAmount: gs.Income - gs.Expense,
-				})
+			// 支出查询
+			expenseSubQuery := r.db.Model(&models.Bill{}).
+				Select(groupFormat+" as group_key, COALESCE(SUM(amount), 0) as amount").
+				Where("account_book_id = ? AND type = ?", accountBookID, "expense")
+
+			if !startTime.IsZero() {
+				expenseSubQuery = expenseSubQuery.Where("created_at >= ?", startTime)
+			}
+			if !endTime.IsZero() {
+				expenseSubQuery = expenseSubQuery.Where("created_at <= ?", endTime)
+			}
+
+			if err := expenseSubQuery.Group(groupFormat).Scan(&expenseResults).Error; err != nil {
+				return nil, err
+			}
+
+			// 合并结果
+			groupResultMap := make(map[string]BillGroupStats)
+
+			// 处理收入
+			for _, result := range incomeResults {
+				groupStats := groupResultMap[result.GroupKey]
+				groupStats.GroupKey = result.GroupKey
+				groupStats.Income = result.Amount
+				groupResultMap[result.GroupKey] = groupStats
+			}
+
+			// 处理支出
+			for _, result := range expenseResults {
+				groupStats := groupResultMap[result.GroupKey]
+				groupStats.GroupKey = result.GroupKey
+				groupStats.Expense = result.Amount
+				groupResultMap[result.GroupKey] = groupStats
+			}
+
+			// 计算净额并添加到结果中
+			for key, stat := range groupResultMap {
+				stat.NetAmount = stat.Income - stat.Expense
+				groupResultMap[key] = stat
+				stats.GroupStats = append(stats.GroupStats, stat)
 			}
 		}
 	}
