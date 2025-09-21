@@ -70,12 +70,30 @@ func (r *accountBookRepository) Update(accountBook *models.AccountBook) error {
 func (r *accountBookRepository) Delete(id uuid.UUID) error {
 	// 使用事务确保操作的原子性
 	return r.db.Transaction(func(tx *gorm.DB) error {
-		// 先删除关联的account_book_users记录
+		// 1. 获取该账本下所有账单ID
+		var billIDs []uuid.UUID
+		if err := tx.Model(&models.Bill{}).Where("account_book_id = ?", id).Pluck("id", &billIDs).Error; err != nil {
+			return err
+		}
+
+		// 2. 如果有账单，删除这些账单的标签关联
+		if len(billIDs) > 0 {
+			if err := tx.Where("bill_id IN ?", billIDs).Delete(&models.BillTag{}).Error; err != nil {
+				return err
+			}
+		}
+
+		// 3. 删除该账本下的所有账单
+		if err := tx.Where("account_book_id = ?", id).Delete(&models.Bill{}).Error; err != nil {
+			return err
+		}
+
+		// 4. 删除关联的account_book_users记录
 		if err := tx.Where("account_book_id = ?", id).Delete(&models.AccountBookUser{}).Error; err != nil {
 			return err
 		}
 
-		// 然后删除账本记录
+		// 5. 最后删除账本记录
 		if err := tx.Delete(&models.AccountBook{}, id).Error; err != nil {
 			return err
 		}
