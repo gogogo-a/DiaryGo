@@ -36,6 +36,7 @@ API接口文件应放置在 `/api/v{version}/` 目录下，按功能模块分文
 ```
 
 ### 接口定义规范
+全部采用restful风格，使用gin框架，使用swagger注释，使用gin-swagger生成swagger文档。
 
 1. **处理器结构体**：每个功能模块定义一个Handler结构体，包含对应的仓库依赖
 
