@@ -17,6 +17,7 @@ type Bill struct {
 	Type          string      `json:"type" gorm:"type:varchar(255);not null"` //收入，支出
 	Remark        string      `json:"remark" gorm:"type:varchar(255);not null"`
 	ImageUrl      string      `json:"image_url" gorm:"type:varchar(255);not null"`
+	BillTime      time.Time   `json:"bill_time" gorm:"type:datetime;"`
 	CreatedAt     time.Time   `json:"created_at"`
 	UpdatedAt     time.Time   `json:"updated_at"`
 }

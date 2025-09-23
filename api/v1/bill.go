@@ -178,6 +178,7 @@ func (h *BillHandler) CreateBill(c *gin.Context) {
 		UserId:        userID.(uuid.UUID),
 		Amount:        req.Amount,
 		Type:          req.Type,
+		BillTime:      req.BillTime,
 		Remark:        req.Remark,
 		ImageUrl:      req.ImageUrl,
 	}
