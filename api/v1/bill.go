@@ -124,7 +124,7 @@ type BillResponse struct {
 // @Produce json
 // @Security BearerAuth
 // @Param request body BillRequest true "账单信息"
-// @Success 200 {object} response.Response{data=models.Bill}
+// @Success 200 {object} response.Response{data=repository.BillWithTags}
 // @Failure 400 {object} response.Response
 // @Failure 401 {object} response.Response
 // @Failure 403 {object} response.Response
@@ -195,9 +195,19 @@ func (h *BillHandler) CreateBill(c *gin.Context) {
 		return
 	}
 
-	response.SuccessWithMessage(c, "创建账单成功", BillResponse{
+	// 转换标签格式为TagInfo
+	var tagInfos []repository.TagInfo
+	for _, tag := range tags {
+		tagInfos = append(tagInfos, repository.TagInfo{
+			ID:      tag.Id.String(),
+			TagName: tag.TagName,
+			Type:    tag.Type,
+		})
+	}
+
+	response.SuccessWithMessage(c, "创建账单成功", repository.BillWithTags{
 		Bill: *billWithTags,
-		Tags: tags,
+		Tags: tagInfos,
 	})
 }
 
@@ -237,7 +247,7 @@ func (h *BillHandler) CreateBill(c *gin.Context) {
 // @Param min_amount query number false "最小金额"
 // @Param max_amount query number false "最大金额"
 // @Param keyword query string false "搜索关键词"
-// @Success 200 {object} response.Response{data=response.PagedData{list=[]models.Bill}}
+// @Success 200 {object} response.Response{data=response.PagedData{list=[]repository.BillWithTags}}
 // @Failure 400 {object} response.Response
 // @Failure 401 {object} response.Response
 // @Failure 403 {object} response.Response
@@ -297,7 +307,7 @@ func (h *BillHandler) ListBills(c *gin.Context) {
 	}
 
 	// 获取账单列表
-	bills, total, err := h.repo.GetBills(
+	billsWithTags, total, err := h.repo.GetBills(
 		accountBookID,
 		query.Page,
 		query.PageSize,
@@ -316,7 +326,7 @@ func (h *BillHandler) ListBills(c *gin.Context) {
 
 	// 构造分页响应
 	pagedData := response.PagedData{
-		List:     bills,
+		List:     billsWithTags,
 		Total:    total,
 		Page:     query.Page,
 		PageSize: query.PageSize,
@@ -356,7 +366,7 @@ func (h *BillHandler) ListBills(c *gin.Context) {
 // @Security BearerAuth
 // @Param id path string true "账单ID"
 // @Param request body BillRequest true "账单信息"
-// @Success 200 {object} response.Response{data=models.Bill}
+// @Success 200 {object} response.Response{data=repository.BillWithTags}
 // @Failure 400 {object} response.Response
 // @Failure 401 {object} response.Response
 // @Failure 403 {object} response.Response
@@ -439,9 +449,19 @@ func (h *BillHandler) UpdateBill(c *gin.Context) {
 		return
 	}
 
-	response.SuccessWithMessage(c, "更新账单成功", BillResponse{
+	// 转换标签格式为TagInfo
+	var tagInfos []repository.TagInfo
+	for _, tag := range tags {
+		tagInfos = append(tagInfos, repository.TagInfo{
+			ID:      tag.Id.String(),
+			TagName: tag.TagName,
+			Type:    tag.Type,
+		})
+	}
+
+	response.SuccessWithMessage(c, "更新账单成功", repository.BillWithTags{
 		Bill: *billWithTags,
-		Tags: tags,
+		Tags: tagInfos,
 	})
 }
 
@@ -528,7 +548,7 @@ func (h *BillHandler) DeleteBill(c *gin.Context) {
 // @Produce json
 // @Security BearerAuth
 // @Param id path string true "账单ID"
-// @Success 200 {object} response.Response{data=models.Bill}
+// @Success 200 {object} response.Response{data=repository.BillWithTags}
 // @Failure 400 {object} response.Response
 // @Failure 401 {object} response.Response
 // @Failure 403 {object} response.Response
@@ -571,9 +591,19 @@ func (h *BillHandler) GetBill(c *gin.Context) {
 		return
 	}
 
-	response.Success(c, BillResponse{
+	// 转换标签格式为TagInfo
+	var tagInfos []repository.TagInfo
+	for _, tag := range tags {
+		tagInfos = append(tagInfos, repository.TagInfo{
+			ID:      tag.Id.String(),
+			TagName: tag.TagName,
+			Type:    tag.Type,
+		})
+	}
+
+	response.Success(c, repository.BillWithTags{
 		Bill: *billWithTags,
-		Tags: tags,
+		Tags: tagInfos,
 	})
 }
 

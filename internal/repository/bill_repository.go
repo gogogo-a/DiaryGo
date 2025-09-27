@@ -27,6 +27,19 @@ type BillGroupStats struct {
 	NetAmount float64 `json:"net_amount"`
 }
 
+// BillWithTags 账单及其标签
+type BillWithTags struct {
+	Bill models.Bill `json:"bill"`
+	Tags []TagInfo   `json:"tags"`
+}
+
+// TagInfo 标签信息
+type TagInfo struct {
+	ID      string `json:"id"`
+	TagName string `json:"tag_name"`
+	Type    string `json:"type"`
+}
+
 // BillRepository 账单仓库接口
 type BillRepository interface {
 	// Create 创建账单
@@ -47,7 +60,7 @@ type BillRepository interface {
 		startTime, endTime time.Time,
 		minAmount, maxAmount float64,
 		keyword string,
-	) ([]models.Bill, int64, error)
+	) ([]BillWithTags, int64, error)
 
 	// Update 更新账单
 	Update(bill *models.Bill, tagIDs []uuid.UUID) error
@@ -154,7 +167,7 @@ func (r *billRepository) GetBills(
 	startTime, endTime time.Time,
 	minAmount, maxAmount float64,
 	keyword string,
-) ([]models.Bill, int64, error) {
+) ([]BillWithTags, int64, error) {
 	var bills []models.Bill
 	var total int64
 
@@ -215,7 +228,34 @@ func (r *billRepository) GetBills(
 		return nil, 0, err
 	}
 
-	return bills, total, nil
+	var billWithTagsList []BillWithTags
+	for _, bill := range bills {
+		// 获取每个账单的标签
+		var tags []models.Tag
+		if err := r.db.Table("tags").
+			Joins("JOIN bill_tags ON tags.id = bill_tags.tag_id").
+			Where("bill_tags.bill_id = ?", bill.Id).
+			Find(&tags).Error; err != nil {
+			return nil, 0, err
+		}
+
+		// 转换标签格式
+		var tagInfos []TagInfo
+		for _, tag := range tags {
+			tagInfos = append(tagInfos, TagInfo{
+				ID:      tag.Id.String(),
+				TagName: tag.TagName,
+				Type:    tag.Type,
+			})
+		}
+
+		billWithTagsList = append(billWithTagsList, BillWithTags{
+			Bill: bill,
+			Tags: tagInfos,
+		})
+	}
+
+	return billWithTagsList, total, nil
 }
 
 // Update 更新账单
